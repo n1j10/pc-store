@@ -7,6 +7,7 @@ import { deleteImage, uploadImage } from "./supabase";
 import { revalidatePath } from "next/cache";
 import { links } from "./links";
 import { Cart } from "@/utils/type";
+import { startQiCardCheckout } from "@/lib/qicard";
 
 
 //fetch all featured products
@@ -536,6 +537,7 @@ export const updateCartItemAction = async ({
 // ================= Orders Actions =================
 export const createOrderAction = async (prevState: any, formData: FormData) => {
   const user = await getAuthUser();
+  let paymentUrl: string | null = null;
 
   try {
     const productIdFromForm = formData.get("productId") as string | null;
@@ -548,14 +550,30 @@ export const createOrderAction = async (prevState: any, formData: FormData) => {
         throw new Error("Product not found");
       }
 
-      await db.order.create({
+      const order = await db.order.create({
         data: {
           clerkId: user.id,
           productId: product.id,
           products: 1,
           orderTotal: product.price,
+          isPaid: false,
         },
       });
+
+      try {
+        const checkout = await startQiCardCheckout({
+          clerkId: user.id,
+          orderId: order.id,
+          customerInfo: {
+            firstName: user.firstName || 'Customer',
+            lastName: user.lastName || '',
+            email: user.emailAddresses?.[0]?.emailAddress,
+          },
+        });
+        paymentUrl = checkout.paymentUrl;
+      } catch (checkoutErr) {
+        console.error('QiCard direct checkout initiation error:', checkoutErr);
+      }
     } else {
       const cart = await fetchOrCreateCart({
         userId: user.id,
@@ -566,25 +584,76 @@ export const createOrderAction = async (prevState: any, formData: FormData) => {
         throw new Error("Cart is empty");
       }
 
-      await db.order.createMany({
-        data: cart.cartItems.map((item) => ({
-          clerkId: user.id,
-          productId: item.productId,
-          products: item.amount,
-          orderTotal: item.amount * item.product.price,
-        })),
-      });
+      const createdOrders = await Promise.all(
+        cart.cartItems.map((item) =>
+          db.order.create({
+            data: {
+              clerkId: user.id,
+              productId: item.productId,
+              products: item.amount,
+              orderTotal: item.amount * item.product.price,
+              isPaid: false,
+            },
+          })
+        )
+      );
 
-      await db.cart.delete({
-        where: { id: cart.id },
-      });
+      const primaryOrder = createdOrders[0];
+      try {
+        const checkout = await startQiCardCheckout({
+          clerkId: user.id,
+          orderId: primaryOrder.id,
+          cartId: cart.id,
+          customerInfo: {
+            firstName: user.firstName || 'Customer',
+            lastName: user.lastName || '',
+            email: user.emailAddresses?.[0]?.emailAddress,
+          },
+        });
+        paymentUrl = checkout.paymentUrl;
+      } catch (checkoutErr) {
+        console.error('QiCard cart checkout initiation error:', checkoutErr);
+      }
     }
   } catch (error) {
     return renderError(error);
   }
 
-  redirect("/orders");
+  if (paymentUrl) {
+    redirect(paymentUrl);
+  } else {
+    redirect("/orders");
+  }
 };
+
+export const payOrderAction = async (prevState: any, formData: FormData) => {
+  const user = await getAuthUser();
+  const orderId = formData.get("orderId") as string;
+  if (!orderId) return renderError(new Error("Order ID is required"));
+
+  let paymentUrl: string | null = null;
+  try {
+    const checkout = await startQiCardCheckout({
+      clerkId: user.id,
+      orderId,
+      customerInfo: {
+        firstName: user.firstName || 'Customer',
+        lastName: user.lastName || '',
+        email: user.emailAddresses?.[0]?.emailAddress,
+      },
+    });
+    paymentUrl = checkout.paymentUrl;
+  } catch (error) {
+    return renderError(error);
+  }
+
+  if (paymentUrl) {
+    redirect(paymentUrl);
+  } else {
+    redirect("/orders");
+  }
+};
+
 
 
 

@@ -19,8 +19,9 @@ function CartTotals({ cart }: { cart: Cart }) {
         </CardTitle>
       </Card>
       <FormContainer action={createOrderAction}>
-        <SubmitButton text='Place Order' className='w-full mt-8' />
+        <SubmitButton text='Pay with QiCard' className='w-full mt-8' />
       </FormContainer>
+
     </div>
   );
 }

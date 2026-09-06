@@ -1,73 +1,98 @@
 import { NextRequest, NextResponse } from 'next/server';
 import db from '@/utils/db';
 import {
-  getString,
-  inquireZainCashPayment,
-  settleZainCashPayment,
-  verifyCallbackToken,
-  ZainCashError,
-} from '@/lib/zaincash';
+  getQiCardPaymentStatus,
+  settleQiCardPayment,
+  verifyQiCardSignature,
+  QiCardError,
+} from '@/lib/qicard';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
+  const signature = request.headers.get('x-signature') || request.headers.get('X-Signature') || '';
   const body = await request.json().catch(() => null);
-  const token = typeof body?.webhook_token === 'string'
-  ? body.webhook_token: typeof body?.webhookToken === 'string'
-      ? body.webhookToken
-      : undefined;
-  if (!token) return NextResponse.json({ error: 'Missing webhook token' }, { status: 400 });
+
+  if (!body || typeof body !== 'object') {
+    return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
+  }
+
+  const paymentId = typeof body.paymentId === 'string' ? body.paymentId : undefined;
+  const requestId = typeof body.requestId === 'string' ? body.requestId : undefined;
+  const rawStatus = typeof body.status === 'string' ? body.status : undefined;
+
+  if (!paymentId && !requestId) {
+    return NextResponse.json({ error: 'Missing paymentId or requestId in webhook payload' }, { status: 400 });
+  }
+
+  // If RSA signature is provided and public key configured, verify it
+  if (signature) {
+    const isValid = verifyQiCardSignature(body, signature);
+    if (!isValid) {
+      console.warn('QiCard webhook signature verification failed for paymentId:', paymentId);
+      return NextResponse.json({ error: 'Invalid webhook signature' }, { status: 401 });
+    }
+  }
 
   try {
-    const payload = verifyCallbackToken(token);
+    const payment = await db.qiCardPayment.findFirst({
+      where: {
+        OR: [
+          paymentId ? { paymentId } : undefined,
+          requestId ? { requestId } : undefined,
+        ].filter(Boolean) as any[],
+      },
+    });
 
-    const eventId = getString(payload, 'eventId', 'event_id');
+    // Record the webhook event in the database
+    const webhookEvent = await db.qiCardWebhookEvent.create({
+      data: {
+        paymentId: payment?.id || null,
+        status: rawStatus || 'RECEIVED',
+        payload: JSON.parse(JSON.stringify(body)),
+      },
+    });
 
-    const transactionId = getString(payload, 'transactionId', 'transaction_id');
+    let verifiedStatus = rawStatus;
+    let details = body.details;
 
-    const status = getString(payload, 'status', 'currentStatus', 'transactionStatus', 'paymentStatus');
-
-    if (!eventId || !transactionId || !status) {
-      return NextResponse.json({ error: 'Invalid webhook payload' }, { status: 400 });
+    // Direct server-to-server confirmation with QiCard API
+    if (paymentId) {
+      try {
+        const inquiry = await getQiCardPaymentStatus(paymentId);
+        verifiedStatus = inquiry.status;
+        details = inquiry.details || details;
+      } catch (inquiryErr) {
+        console.warn('QiCard status inquiry during webhook failed, using body status:', inquiryErr);
+      }
     }
 
-    const existing = await db.zainCashWebhookEvent.findUnique({ where: { eventId } });
-    if (existing?.processedAt) return NextResponse.json({ received: true });
+    if (verifiedStatus) {
+      await settleQiCardPayment({
+        paymentId: paymentId || payment?.paymentId || undefined,
+        requestId: requestId || payment?.requestId || undefined,
+        status: verifiedStatus,
+        details,
+      });
+    }
 
-    const payment = await db.zainCashPayment.findUnique({ where: { transactionId } });
-
-    if (!payment) return NextResponse.json({ error: 'Unknown transaction' }, { status: 404 });
-
-    const event = existing ?? await db.zainCashWebhookEvent.create({
+    await db.qiCardWebhookEvent.update({
+      where: { id: webhookEvent.id },
       data: {
-        eventId,
-        paymentId: payment.id,
-        status,
-        payload: JSON.parse(JSON.stringify(payload)),
+        processedAt: new Date(),
+        status: verifiedStatus || rawStatus || 'PROCESSED',
       },
     });
 
-    // The webhook is signed; inquiry adds a second server-to-server confirmation.
-    const inquiry = await inquireZainCashPayment(transactionId);
-
-    await settleZainCashPayment({ transactionId, ...inquiry });
-
-    await db.zainCashWebhookEvent.update({
-      where: { id: event.id },
-      data: { 
-        processedAt: new Date(), 
-        status: inquiry.status 
-      },
-    });
+    // The QiCard Payment Gateway requires a 200 OK response
     return NextResponse.json({ received: true });
-    
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('ZainCash webhook processing failed', { message });
-    // A 5xx tells ZainCash to retry a valid event that was not processed.
+    console.error('QiCard webhook processing failed:', { message, paymentId, requestId });
     return NextResponse.json(
-      { error: error instanceof ZainCashError ? message : 'Webhook processing failed' },
+      { error: error instanceof QiCardError ? message : 'Webhook processing error' },
       { status: 500 }
     );
   }
 }
+
