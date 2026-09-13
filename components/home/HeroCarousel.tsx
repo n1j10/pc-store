@@ -12,11 +12,7 @@ const defaultHeroImages: HeroSlide[] = [
     title: "Next-Gen Graphics & Processors",
     image: "https://images.pexels.com/photos/777001/pexels-photo-777001.jpeg",
   },
-  // {
-  //   id: "default-3",
-  //   title: "Premium PC Accessories & Gear",
-  //   image: "/img-1.jpg",
-  // },
+
 ];
 
 async function HeroCarousel() {

@@ -15,6 +15,8 @@ function NavSearch() {
   const {replace} = useRouter()   //when I search will take me to product page and replace  current
   console.log(search, 'search')
 
+
+
   const handleSearch = useDebouncedCallback((value: string) => {  //useDebouncedCallback is fuction to delay search 
     const params = new URLSearchParams(searchParams); //read from url query parametrd
   if(value){
@@ -24,7 +26,6 @@ function NavSearch() {
   }
 replace(`${links.PRODUCTS.href}?${params.toString()}`); //when I search will take me to product page and replace  current
 },700);
-
 
   return (
     <Input

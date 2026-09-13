@@ -1,5 +1,4 @@
 import { fetchAllProducts, fetchSingleCategory } from '@/utils/actions'
-import React from 'react'
 import { Separator } from '../ui/separator';
 import { Button } from '../ui/button';
 import Link from 'next/link';
@@ -12,6 +11,7 @@ import { ArrowBigLeft } from 'lucide-react';
 async function ProductsContainer({ layout, search, categoryId }: { layout: string; search?: string; categoryId?: string }) {
 
   const totalProducts = await fetchAllProducts({ search, categoryId });
+
   const category = categoryId ? await fetchSingleCategory(categoryId) : null;
 
   const lengthProducts = totalProducts.length;
@@ -45,7 +45,6 @@ async function ProductsContainer({ layout, search, categoryId }: { layout: strin
             <Button
               variant={layout === 'list' ? 'default' : 'outline'}
               size='icon'
-
             >
               <Link href={`${links.PRODUCTS.href}?layout=list${searchTerm}${categoryTerm}`}>
                 <LuList />
@@ -55,8 +54,6 @@ async function ProductsContainer({ layout, search, categoryId }: { layout: strin
         </div>
         <Separator className='mt-4' />
       </section>
-
-
 
 
       {/* product  */}

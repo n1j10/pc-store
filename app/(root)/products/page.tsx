@@ -12,7 +12,9 @@ interface ProductsPageProps {
 
 const ProductsPage = async ({ searchParams }: ProductsPageProps) => {
     const { layout = 'grid', search, category } = await searchParams || {};
+    
     return (
+   
         <ProductsContainer layout={layout} search={search} categoryId={category} />
     )
 }
