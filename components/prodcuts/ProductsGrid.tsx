@@ -7,16 +7,14 @@ import { formatCurrency } from "@/utils/format";
 import FavoriteToggleButton from "./FavoriteToggleButton";
 import SubmitButton from "../form/Buttons";
 import FormContainer from "../form/FormContainer";
-import { createOrderAction } from "@/utils/actions";
+import { addToCartAction, createOrderAction } from "@/utils/actions";
 import AddtoCart from "../single-prodcut/AddtoCart";
 
 function ProductsGrid({ products }: { products: Product[] }) {
   console.log(products, "ProductsGrid");
-  
 
   return (
-    <section className="pb-14 pt-12 grid md:grid-cols-2 gap-4 lg:grid-cols-3">
-
+    <section className="pb-14 pt-12 grid md:grid-cols-2 gap-4 lg:grid-cols-3 items-stretch">
       {products.map((product) => {
         // const { name, price, image } = product;  //shortcut for all name iamge price
         const productName = product.name;
@@ -24,10 +22,10 @@ function ProductsGrid({ products }: { products: Product[] }) {
         const DinarAmount = formatCurrency(product.price);
         const description = product.description;
         return (
-          <div key={productId} className="group relative">
-            <Card className="transform group-hover:shadow-xl transition-shadow duration-500">
-              <CardContent>
-                <div className="relative h-64 md:h-48 rounded overflow-hidden ">
+          <div key={productId} className="group relative h-full">
+            <Card className="h-full flex flex-col transform group-hover:shadow-xl transition-shadow duration-500">
+              <CardContent className="flex flex-col flex-1 p-5">
+                <div className="relative h-64 md:h-48 rounded overflow-hidden flex-shrink-0">
                   <Link href={`${links.PRODUCTS.href}/${productId}`}>
                     <Image
                       src={product.image}
@@ -40,13 +38,20 @@ function ProductsGrid({ products }: { products: Product[] }) {
                   </Link>
                 </div>
                 <div className="mt-4 text-center">
-                  <h2 className="text-lg capitalize">{productName}</h2>
-                  <h4 className="text-lg capitalize">{description}</h4>
+                  <h2 className="text-lg font-semibold capitalize truncate" title={productName}>
+                    {productName}
+                  </h2>
+                  <h4 className="text-sm text-muted-foreground capitalize mt-1 line-clamp-2 min-h-[2.5rem]">
+                    {description}
+                  </h4>
                 </div>
-                <div className="flex items-center justify-between mt-2">
-                                              <AddtoCart productId={product.id} />
-
-                  <p className="text-muted-foreground mt-5">{DinarAmount}</p>
+                <div className="flex items-center justify-between mt-auto pt-4">
+                  <FormContainer action={addToCartAction}>
+                    <input type='hidden' name='productId' value={productId} />
+                    <input type='hidden' name='amount' value={1} />
+                    <SubmitButton text='add to cart' className='mt-0' />
+                  </FormContainer>
+                  <p className="text-muted-foreground font-medium">{DinarAmount}</p>
                 </div>
               </CardContent>
             </Card>
@@ -56,7 +61,6 @@ function ProductsGrid({ products }: { products: Product[] }) {
           </div>
         );
       })}
-
 
     </section>
   );
