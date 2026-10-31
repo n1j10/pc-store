@@ -1,4 +1,4 @@
-﻿"use server";
+"use server";
 import { redirect } from "next/navigation";
 import db from "../db";
 import { startQiCardCheckout } from "@/lib/qicard";
@@ -46,25 +46,11 @@ export const createOrderAction = async (prevState: any, formData: FormData) => {
 
       if (!cart.cartItems.length) throw new Error("Cart is empty");
 
-      const createdOrders = await Promise.all(
-        cart.cartItems.map((item) =>
-          db.order.create({
-            data: {
-              clerkId: user.id,
-              productId: item.productId,
-              products: item.amount,
-              orderTotal: item.amount * item.product.price,
-              isPaid: false,
-            },
-          }),
-        ),
-      );
-
-      const primaryOrder = createdOrders[0];
+      // Checkout by cartId so the order total is computed server-side from the
+      // whole cart (previously only the first item was charged).
       try {
         const checkout = await startQiCardCheckout({
           clerkId: user.id,
-          orderId: primaryOrder.id,
           cartId: cart.id,
           customerInfo: {
             firstName: user.firstName || "Customer",

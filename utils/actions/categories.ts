@@ -1,4 +1,4 @@
-﻿"use server";
+"use server";
 import { redirect } from "next/navigation";
 import db from "../db";
 import { categorySchema, imageSchema, validateFuctionSchema } from "../schema";
@@ -89,10 +89,11 @@ export const updateCategoryImageAction = async (prevState: any, formData: FormDa
   try {
     const image = formData.get("image") as File;
     const categoryId = formData.get("id") as string;
-    const oldImageUrl = formData.get("url") as string;
     const validateImageFile = validateFuctionSchema(imageSchema, { image });
+    const existing = await db.category.findUnique({ where: { id: categoryId }, select: { image: true } });
+    if (!existing) throw new Error("Category not found");
     const fullImagePath = await uploadImage(validateImageFile.image);
-    await deleteImage(oldImageUrl);
+    if (existing.image) await deleteImage(existing.image);
     await db.category.update({
       where: { id: categoryId },
       data: { image: fullImagePath },
