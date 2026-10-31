@@ -14,8 +14,18 @@ export const creatReviewAction = async (prevState: any, formData: FormData) => {
       const errors = validatedFields.error?.issues.map((error) => error.message);
       return { message: "Error" + errors?.join(",") };
     }
+    const { productId } = validatedFields.data;
+    const product = await db.product.findUnique({ where: { id: productId }, select: { id: true } });
+    if (!product) throw new Error("Product not found");
+    const existing = await db.review.findFirst({ where: { productId, clerkId: user.id } });
+    if (existing) throw new Error("You have already reviewed this product");
     await db.review.create({
-      data: { ...validatedFields.data, clerkId: user.id },
+      data: {
+        ...validatedFields.data,
+        clerkId: user.id,
+        authorName: user.firstName || user.username || "Customer",
+        authorImageUrl: user.imageUrl,
+      },
     });
     revalidatePath(`/products/${validatedFields.data.productId}`);
     return { message: "review submitted successfully" };

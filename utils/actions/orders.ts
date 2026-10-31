@@ -46,25 +46,11 @@ export const createOrderAction = async (prevState: any, formData: FormData) => {
 
       if (!cart.cartItems.length) throw new Error("Cart is empty");
 
-      const createdOrders = await Promise.all(
-        cart.cartItems.map((item) =>
-          db.order.create({
-            data: {
-              clerkId: user.id,
-              productId: item.productId,
-              products: item.amount,
-              orderTotal: item.amount * item.product.price,
-              isPaid: false,
-            },
-          }),
-        ),
-      );
-
-      const primaryOrder = createdOrders[0];
+      // startQiCardCheckout creates one order for the whole cart and charges
+      // its full total (it previously charged only the first item's order).
       try {
         const checkout = await startQiCardCheckout({
           clerkId: user.id,
-          orderId: primaryOrder.id,
           cartId: cart.id,
           customerInfo: {
             firstName: user.firstName || "Customer",

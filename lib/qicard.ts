@@ -3,9 +3,12 @@ import db from '@/utils/db';
 
 const SUCCESS = 'SUCCESS';
 const DEFAULT_BASE_URL = 'https://uat-sandbox-3ds-api.qi.iq/api/v1';
-const DEFAULT_USERNAME = 'paymentgatewaytest';
-const DEFAULT_PASSWORD = 'WHaNFE5C3qlChqNbAzH4';
-const DEFAULT_TERMINAL_ID = '237984';
+
+function requireEnv(name: string) {
+  const value = process.env[name]?.trim();
+  if (!value) throw new QiCardError(`Missing required environment variable: ${name}`);
+  return value;
+}
 
 export class QiCardError extends Error {}
 
@@ -16,12 +19,12 @@ function getBaseUrl() {
 }
 
 function getTerminalId() {
-  return process.env.QICARD_TERMINAL_ID?.trim() || DEFAULT_TERMINAL_ID;
+  return requireEnv('QICARD_TERMINAL_ID');
 }
 
 function getBasicAuthHeader() {
-  const username = process.env.QICARD_USERNAME?.trim() || DEFAULT_USERNAME;
-  const password = process.env.QICARD_PASSWORD?.trim() || DEFAULT_PASSWORD;
+  const username = requireEnv('QICARD_USERNAME');
+  const password = requireEnv('QICARD_PASSWORD');
   const token = Buffer.from(`${username}:${password}`).toString('base64');
   return `Basic ${token}`;
 }
@@ -297,23 +300,20 @@ export async function startQiCardCheckout(input: {
  * Settles a payment in the database using the verified QiCard status.
  */
 export async function settleQiCardPayment(input: {
-  paymentId?: string;
-  requestId?: string;
+  paymentId: string;
   status: string;
+  amount?: number;
   details?: JsonRecord;
   failureReason?: string;
 }) {
-  const normalizedStatus = input.status.toUpperCase();
+  let normalizedStatus = input.status.toUpperCase();
 
   return db.$transaction(
     async (tx) => {
-      const payment = await tx.qiCardPayment.findFirst({
-        where: {
-          OR: [
-            input.paymentId ? { paymentId: input.paymentId } : undefined,
-            input.requestId ? { requestId: input.requestId } : undefined,
-          ].filter(Boolean) as any[],
-        },
+      // Only ever match on the gateway-issued paymentId that we stored ourselves,
+      // so a caller cannot pair a real paymentId with someone else's requestId.
+      const payment = await tx.qiCardPayment.findUnique({
+        where: { paymentId: input.paymentId },
         include: { order: true },
       });
 
@@ -325,6 +325,12 @@ export async function settleQiCardPayment(input: {
         return payment;
       }
 
+      // The gateway-confirmed amount must match what we asked the customer to pay.
+      if (normalizedStatus === SUCCESS && input.amount !== undefined && Number(input.amount) !== payment.amount) {
+        normalizedStatus = 'AMOUNT_MISMATCH';
+        input.failureReason = `Expected ${payment.amount}, gateway reported ${input.amount}`;
+      }
+
       const maskedPan = typeof input.details?.maskedPan === 'string' ? input.details.maskedPan : undefined;
       const paymentSystem = typeof input.details?.paymentSystem === 'string' ? input.details.paymentSystem : undefined;
 
@@ -332,7 +338,6 @@ export async function settleQiCardPayment(input: {
         where: { id: payment.id },
         data: {
           status: normalizedStatus,
-          paymentId: input.paymentId || payment.paymentId,
           maskedPan: maskedPan || payment.maskedPan,
           paymentSystem: paymentSystem || payment.paymentSystem,
           details: input.details ? JSON.parse(JSON.stringify(input.details)) : undefined,
@@ -365,8 +370,9 @@ export async function settleQiCardPayment(input: {
 export function verifyQiCardSignature(payload: JsonRecord, signature: string): boolean {
   const publicKey = process.env.QICARD_PUBLIC_KEY?.trim();
   if (!publicKey) {
-    // If no public key is configured, fallback to direct server status inquiry
-    return true;
+    // Without a key we cannot verify anything; callers still confirm the status
+    // with the gateway, but production deployments must configure the key.
+    return process.env.NODE_ENV !== 'production';
   }
 
   try {

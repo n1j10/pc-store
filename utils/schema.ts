@@ -60,15 +60,15 @@ export function validateFuctionSchema<T>(schema: zod.ZodSchema<T>, data: unknown
 
 function validateImageFile() {
     const imageSize = 1024 * 1024;
-    const acceptedFileType = ['image/']
+    const acceptedFileType = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 
     return zod.instanceof(File).refine((file) => {
         return !file || file.size <= imageSize
     }, 'File size must be less than 1 MB')
 
         .refine((file) => { //refine means custom validation
-            return !file || acceptedFileType.some((type) => file.type.startsWith(type));
-        }, 'File  must be an image')
+            return !file || acceptedFileType.includes(file.type);
+        }, 'File must be a JPEG, PNG, WebP or GIF image')
 }
 //imageSchema
 export const imageSchema = zod.object({
@@ -78,7 +78,7 @@ export const imageSchema = zod.object({
 
 //Review
 export const reviewSchema = zod.object({
-    rating: zod.coerce.number()
+    rating: zod.coerce.number().int()
         .min(1, 'Rating must be at least 1')
         .max(5, 'Rating must be at most 5'),
 
@@ -89,12 +89,8 @@ export const reviewSchema = zod.object({
     productId: zod.string().refine((value) => value !== '', {
         message: "Product Id cannot be empty"
     }),
-    authorName: zod.string().refine((value) => value !== '', {
-        message: "Author name cannot be empty"
-    }),
-    authorImageUrl: zod.string().refine((value) => value !== '', {
-        message: "Author image URL cannot be empty"
-    }),
+    // authorName / authorImageUrl are taken from the signed-in Clerk user on the
+    // server, never from the form, so reviews cannot impersonate other people.
 })
 
 

@@ -10,6 +10,18 @@ import { fetchSingleProduct } from "./products";
 
 // ================= Cart Actions =================
 
+const MAX_ITEM_AMOUNT = 20;
+
+// Quantities come from the client, so they must be whole numbers in range;
+// a negative amount would otherwise reduce the order total.
+const parseAmount = (value: unknown) => {
+  const amount = Number(value);
+  if (!Number.isInteger(amount) || amount < 1 || amount > MAX_ITEM_AMOUNT) {
+    throw new Error(`Amount must be between 1 and ${MAX_ITEM_AMOUNT}`);
+  }
+  return amount;
+};
+
 export const fetchCartItems = async () => {
   const { userId } = await auth();
   if (!userId) return 0;
@@ -64,7 +76,7 @@ const updateOrCreateCartItem = async ({
   if (cartItem) {
     cartItem = await db.cartItem.update({
       where: { id: cartItem.id },
-      data: { amount: cartItem.amount + amount },
+      data: { amount: Math.min(cartItem.amount + amount, MAX_ITEM_AMOUNT) },
     });
   } else {
     cartItem = await db.cartItem.create({
@@ -101,7 +113,7 @@ export const addToCartAction = async (prevState: any, formData: FormData) => {
   const user = await getAuthUser();
   try {
     const productId = formData.get("productId") as string;
-    const amount = Number(formData.get("amount"));
+    const amount = parseAmount(formData.get("amount"));
     await fetchSingleProduct(productId);
     const cart = await fetchOrCreateCart({ userId: user.id });
     await updateOrCreateCartItem({ productId, cartId: cart.id, amount });
@@ -149,7 +161,7 @@ export const updateCartItemAction = async ({
     });
     await db.cartItem.update({
       where: { id: cartItemId, cartId: cart.id },
-      data: { amount },
+      data: { amount: parseAmount(amount) },
     });
     await updateCart(cart);
     revalidatePath("/cart");

@@ -1,4 +1,9 @@
 ﻿export const renderError = (error: unknown): { message: string } => {
+  // Database errors can reveal schema details; log them and show a generic message.
+  if (error instanceof Error && error.name.startsWith("PrismaClient")) {
+    console.error(error);
+    return { message: "Something went wrong, please try again" };
+  }
   return {
     message: error instanceof Error ? error.message : "Unknown Error",
   };

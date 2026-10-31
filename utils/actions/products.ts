@@ -43,7 +43,7 @@ export async function createProductAction(
   prevState: any,
   formData: FormData,
 ): Promise<{ message: string }> {
-  const user = await getAuthUser();
+  const user = await getAdminUser();
   try {
     const rowData = Object.fromEntries(formData);
     const fileImage = formData.get("image") as File;
@@ -94,15 +94,18 @@ export const updateProductAction = async (prevState: any, formData: FormData) =>
 };
 
 export const updateProductImageAction = async (prevState: any, formData: FormData) => {
-  await getAuthUser();
+  await getAdminUser();
   try {
     const image = formData.get("image") as File;
     const productId = formData.get("id") as string;
-    const oldImageUrl = formData.get("url") as string;
     const validateImageFile = validateFuctionSchema(imageSchema, { image });
+    // Read the old image from the DB, never from the form, so a request
+    // cannot delete arbitrary files from the storage bucket.
+    const product = await db.product.findUnique({ where: { id: productId }, select: { image: true } });
+    if (!product) throw new Error("Product not found");
     const fullImagePath = await uploadImage(validateImageFile.image);
-    await deleteImage(oldImageUrl);
     await db.product.update({ where: { id: productId }, data: { image: fullImagePath } });
+    await deleteImage(product.image);
     revalidatePath(`${links.AdminProducts.href}/${productId}/edit`);
     return { message: "Image updated successfully" };
   } catch (error) {
@@ -111,8 +114,7 @@ export const updateProductImageAction = async (prevState: any, formData: FormDat
 };
 
 export const fetchAdminPosts = async () => {
-  await getAdminUser();
-  const user = await getAuthUser();
+  const user = await getAdminUser();
   const products = await db.product.findMany({
     where: { clerkId: user.id },
     orderBy: { createdAt: "desc" },

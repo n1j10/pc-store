@@ -18,41 +18,29 @@ function resultRedirect(request: NextRequest, status: 'success' | 'failed', paym
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const paymentId = searchParams.get('paymentId');
-  const requestId = searchParams.get('requestId');
   const orderId = searchParams.get('orderId') || undefined;
-  const queryStatus = searchParams.get('status');
 
-  if (!paymentId && !requestId) {
+  // The query string is user-controlled: only the paymentId is used, and only
+  // as a key for a server-to-server status inquiry.
+  if (!paymentId) {
     return resultRedirect(request, 'failed', undefined, orderId);
   }
 
   try {
-    let finalStatus = queryStatus;
-    let details: any = undefined;
+    const statusResult = await getQiCardPaymentStatus(paymentId);
+    const settled = await settleQiCardPayment({
+      paymentId,
+      status: statusResult.status,
+      amount: statusResult.confirmedAmount ?? statusResult.amount,
+      details: statusResult.details,
+    });
 
-    // Direct server-to-server verification with QiCard gateway
-    if (paymentId) {
-      const statusResult = await getQiCardPaymentStatus(paymentId);
-      finalStatus = statusResult.status;
-      details = statusResult.details;
-    }
-
-    if (paymentId && finalStatus) {
-      await settleQiCardPayment({
-        paymentId,
-        requestId: requestId || undefined,
-        status: finalStatus,
-        details,
-      });
-    }
-
-    const isSuccess = finalStatus?.toUpperCase() === 'SUCCESS';
-    return resultRedirect(request, isSuccess ? 'success' : 'failed', paymentId || undefined, orderId);
+    const isSuccess = settled.status.toUpperCase() === 'SUCCESS';
+    return resultRedirect(request, isSuccess ? 'success' : 'failed', paymentId, orderId);
   } catch (error) {
     console.error('QiCard callback verification error:', {
       message: error instanceof Error ? error.message : 'Unknown error',
       paymentId,
-      requestId,
     });
     return resultRedirect(request, 'failed', paymentId || undefined, orderId);
   }

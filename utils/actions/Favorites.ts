@@ -25,7 +25,7 @@ export const toggleFavAction = async (prevState: toggleFavActionProps) => {
   const { productID, FavoriteID } = prevState;
   try {
     if (FavoriteID) {
-      await db.favorite.delete({ where: { id: FavoriteID } });
+      await db.favorite.delete({ where: { id: FavoriteID, clerkId: user.id } });
     } else {
       await db.favorite.create({
         data: { productId: productID, clerkId: user.id },

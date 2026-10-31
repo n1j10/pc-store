@@ -89,14 +89,15 @@ export const updateCategoryImageAction = async (prevState: any, formData: FormDa
   try {
     const image = formData.get("image") as File;
     const categoryId = formData.get("id") as string;
-    const oldImageUrl = formData.get("url") as string;
     const validateImageFile = validateFuctionSchema(imageSchema, { image });
+    const category = await db.category.findUnique({ where: { id: categoryId }, select: { image: true } });
+    if (!category) throw new Error("Category not found");
     const fullImagePath = await uploadImage(validateImageFile.image);
-    await deleteImage(oldImageUrl);
     await db.category.update({
       where: { id: categoryId },
       data: { image: fullImagePath },
     });
+    if (category.image) await deleteImage(category.image);
     revalidatePath(`${links.AdminCategories.href}/${categoryId}/edit`);
     return { message: "Image updated successfully" };
   } catch (error) {
